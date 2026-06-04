@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useHistoryStore } from './history-store';
+import { useAuthStore } from './auth-store';
 
 export interface Badge {
   id: string;
@@ -34,6 +35,7 @@ interface LearningState {
   takeQuiz: (perfectScore: boolean) => void;
   resetLearningState: () => void;
   checkBadgeUnlocks: () => string[]; // returns newly unlocked badge titles
+  setStoreState: (state: { dailyGoal: number; masteredWords: string[]; unlockedBadges: string[]; quizzesTaken: number; perfectQuizzes: number }) => void;
 }
 
 export const useLearningStore = create<LearningState>()(
@@ -42,34 +44,80 @@ export const useLearningStore = create<LearningState>()(
       dailyGoal: 5,
       masteredWords: [],
       unlockedBadges: ['first-step'], // start with first-step unlocked for presentation
-      quizzesTaken: 2,
-      perfectQuizzes: 1,
+      quizzesTaken: 0,
+      perfectQuizzes: 0,
 
       markWordMastered: (id, mastered) => set((state) => {
         const masteredWords = mastered
           ? [...state.masteredWords.filter(w => w !== id), id]
           : state.masteredWords.filter(w => w !== id);
+        
+        // Sync to Auth database
+        const currentUser = useAuthStore.getState().currentUser;
+        if (currentUser) {
+          useAuthStore.getState().saveUserData(currentUser.id, {
+            unlockedBadges: state.unlockedBadges,
+            quizzesTaken: state.quizzesTaken,
+            perfectQuizzes: state.perfectQuizzes
+          });
+        }
+
         return { masteredWords };
       }),
 
       unlockBadge: (id) => {
         const state = get();
         if (state.unlockedBadges.includes(id)) return false;
-        set({ unlockedBadges: [...state.unlockedBadges, id] });
+        const nextBadges = [...state.unlockedBadges, id];
+        set({ unlockedBadges: nextBadges });
+
+        // Sync to Auth database
+        const currentUser = useAuthStore.getState().currentUser;
+        if (currentUser) {
+          useAuthStore.getState().saveUserData(currentUser.id, {
+            unlockedBadges: nextBadges
+          });
+        }
+
         return true;
       },
 
-      takeQuiz: (perfectScore) => set((state) => ({
-        quizzesTaken: state.quizzesTaken + 1,
-        perfectQuizzes: perfectScore ? state.perfectQuizzes + 1 : state.perfectQuizzes,
-      })),
+      takeQuiz: (perfectScore) => set((state) => {
+        const nextTaken = state.quizzesTaken + 1;
+        const nextPerfect = perfectScore ? state.perfectQuizzes + 1 : state.perfectQuizzes;
 
-      resetLearningState: () => set({
-        masteredWords: [],
-        unlockedBadges: ['first-step'],
-        quizzesTaken: 0,
-        perfectQuizzes: 0,
+        // Sync to Auth database
+        const currentUser = useAuthStore.getState().currentUser;
+        if (currentUser) {
+          useAuthStore.getState().saveUserData(currentUser.id, {
+            quizzesTaken: nextTaken,
+            perfectQuizzes: nextPerfect
+          });
+        }
+
+        return {
+          quizzesTaken: nextTaken,
+          perfectQuizzes: nextPerfect
+        };
       }),
+
+      resetLearningState: () => {
+        set({
+          masteredWords: [],
+          unlockedBadges: ['first-step'],
+          quizzesTaken: 0,
+          perfectQuizzes: 0,
+        });
+
+        const currentUser = useAuthStore.getState().currentUser;
+        if (currentUser) {
+          useAuthStore.getState().saveUserData(currentUser.id, {
+            unlockedBadges: ['first-step'],
+            quizzesTaken: 0,
+            perfectQuizzes: 0
+          });
+        }
+      },
 
       checkBadgeUnlocks: () => {
         const state = get();
@@ -109,7 +157,15 @@ export const useLearningStore = create<LearningState>()(
         }
 
         return newUnlocks;
-      }
+      },
+
+      setStoreState: (state) => set({
+        dailyGoal: state.dailyGoal,
+        masteredWords: state.masteredWords,
+        unlockedBadges: state.unlockedBadges,
+        quizzesTaken: state.quizzesTaken,
+        perfectQuizzes: state.perfectQuizzes
+      }),
     }),
     {
       name: 'translategpt-learning',

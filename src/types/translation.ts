@@ -19,6 +19,7 @@ export interface TranslationResult {
   timestamp: number;
   isFavorite: boolean;
   type: 'text' | 'voice' | 'camera' | 'conversation';
+  folderId?: string;
   alternatives?: string[];
   pronunciation?: string;
   grammarNotes?: string;

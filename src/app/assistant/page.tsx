@@ -1,35 +1,23 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Sparkles, Send, Volume2, Mic, MicOff, RefreshCw, Copy, Check, Info
+  Sparkles, Send, Volume2, Mic, MicOff, RefreshCw, Copy, Check, Info, Award, BookOpen
 } from 'lucide-react';
 import { askAIAssistant } from '@/lib/openai';
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: number;
-}
-
-const SUGGESTIONS = [
-  { text: 'Explain French subjunctive verb endings', icon: '🇫🇷' },
-  { text: 'Give me 5 essential Spanish idioms for travelers', icon: '🇪🇸' },
-  { text: 'How do I pronounce "refrigerator" in Japanese?', icon: '🇯🇵' },
-  { text: 'Correct my German grammar: "Ich habe ein Hund"', icon: '🇩🇪' },
-];
+import { useAuthStore, TutorMessage } from '@/stores/auth-store';
+import { useHistoryStore } from '@/stores/history-store';
+import { getLanguageByCode } from '@/lib/languages';
 
 export default function AssistantPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: 'Hello! I am your AI Language Assistant. I can explain complex grammar, correct your sentences, suggest expressions, or help you practice pronunciation. Select a topic below or type your question!',
-      timestamp: Date.now(),
-    },
-  ]);
+  const router = useRouter();
+  const { currentUser, addTutorMessage, clearTutorHistory } = useAuthStore();
+  const stats = useHistoryStore((s) => s.stats);
+  const translations = useHistoryStore((s) => s.translations);
+
+  const [messages, setMessages] = useState<TutorMessage[]>([]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -38,6 +26,8 @@ export default function AssistantPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
+  const targetLang = currentUser ? getLanguageByCode(currentUser.targetLanguages[0]) : null;
+
   // Check for OpenAI API key
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -45,6 +35,26 @@ export default function AssistantPage() {
       setHasApiKey(!!key);
     }
   }, []);
+
+  // Initialize tutor message memory from profile
+  useEffect(() => {
+    if (!currentUser) return;
+
+    if (currentUser.tutorMemory && currentUser.tutorMemory.length > 0) {
+      setMessages(currentUser.tutorMemory);
+    } else {
+      const targetName = targetLang ? targetLang.name : 'Spanish';
+      const goalStr = currentUser.learningGoals.join(' & ');
+      const welcomeMsg: TutorMessage = {
+        id: 'welcome',
+        role: 'assistant',
+        content: `Hello ${currentUser.name}! I am your AI Language Tutor. 🎓\n\nI see you are a **${currentUser.skillLevel}** learning **${targetName}** for **${goalStr}**.\n\nI can explain grammar, suggest better phrasings, help you practice pronunciation, or give you customized practice exercises. Tap a suggestion below or tell me what you want to study today!`,
+        timestamp: Date.now(),
+      };
+      setMessages([welcomeMsg]);
+      addTutorMessage(welcomeMsg);
+    }
+  }, [currentUser, targetLang]);
 
   // Auto-scroll messages
   useEffect(() => {
@@ -90,7 +100,7 @@ export default function AssistantPage() {
       recognitionRef.current.stop();
       setIsListening(false);
     } else {
-      // Request mic permission explicitly to trigger browser dialog and catch permission errors
+      // Request mic permission explicitly
       if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -118,7 +128,8 @@ export default function AssistantPage() {
   const handleSpeak = (text: string) => {
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
+      utterance.lang = targetLang?.speechCode || targetLang?.code || 'es-ES';
+      utterance.rate = 0.95;
       speechSynthesis.cancel();
       speechSynthesis.speak(utterance);
     }
@@ -130,7 +141,7 @@ export default function AssistantPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Helper for typing animation/stream simulation
+  // Helper for typing animation
   const typeMessage = (text: string, messageId: string) => {
     let currentText = '';
     const words = text.split(' ');
@@ -145,6 +156,15 @@ export default function AssistantPage() {
         i++;
       } else {
         clearInterval(interval);
+        
+        // Save the finished assistant message to tutor memory store
+        const finalMsg: TutorMessage = {
+          id: messageId,
+          role: 'assistant',
+          content: text,
+          timestamp: Date.now()
+        };
+        addTutorMessage(finalMsg);
         setIsSending(false);
       }
     }, 45);
@@ -152,25 +172,36 @@ export default function AssistantPage() {
 
   const handleSend = async (textToSend: string) => {
     const trimmed = textToSend.trim();
-    if (!trimmed || isSending) return;
+    if (!trimmed || isSending || !currentUser) return;
 
     const userMsgId = `${Date.now()}-user`;
     const botMsgId = `${Date.now()}-bot`;
 
-    setMessages(prev => [
-      ...prev,
-      { id: userMsgId, role: 'user', content: trimmed, timestamp: Date.now() },
-    ]);
+    const userMsg: TutorMessage = {
+      id: userMsgId,
+      role: 'user',
+      content: trimmed,
+      timestamp: Date.now()
+    };
+
+    setMessages(prev => [...prev, userMsg]);
+    addTutorMessage(userMsg);
     setInput('');
     setIsSending(true);
 
-    // Add empty placeholder message for bot response
+    // Placeholder message
     setMessages(prev => [
       ...prev,
       { id: botMsgId, role: 'assistant', content: '', timestamp: Date.now() },
     ]);
 
     const apiKey = localStorage.getItem('translategpt_openai_key') || '';
+    
+    // Prefix prompts with system context
+    const targetName = targetLang ? targetLang.name : 'Spanish';
+    const goalsStr = currentUser.learningGoals.join(', ');
+    const systemPrompt = `You are a helpful language learning tutor. The student is ${currentUser.name}, a ${currentUser.skillLevel} learning ${targetName} for ${goalsStr}. Keep answers educational and encouraging.`;
+
     const history = messages
       .filter(m => m.id !== 'welcome')
       .map(m => ({ role: m.role, content: m.content }));
@@ -178,60 +209,57 @@ export default function AssistantPage() {
     try {
       if (apiKey) {
         // Query real OpenAI API
-        const answer = await askAIAssistant(trimmed, history, apiKey);
+        const answer = await askAIAssistant(`${systemPrompt}\n\nUser Question: ${trimmed}`, history, apiKey);
         typeMessage(answer, botMsgId);
       } else {
-        // Run smart local mock responses
+        // Offline / Demo Smart Mock responses
         await new Promise(resolve => setTimeout(resolve, 1000));
         let mockReply = '';
         const lower = trimmed.toLowerCase();
 
-        if (lower.includes('conjug') || lower.includes('verb') || lower.includes('ser')) {
-          mockReply = `**Spanish Verb Conjugation**
-
-Here is the present tense conjugation of **ser** (to be - permanent characteristics):
+        if (lower.includes('conjug') || lower.includes('verb')) {
+          mockReply = `**Verb Conjugation Practice**
+Here is how you conjugate the essential verb **ser** (to be) in ${targetName} present tense:
 * **Yo soy** (I am)
-* **Tú eres** (You are - informal)
-* **Él/Ella/Usted es** (He/She/You are - formal)
+* **Tú eres** (You are)
+* **Él/Ella es** (He/She is)
 * **Nosotros somos** (We are)
-* **Ellos/Ellas/Ustedes son** (They/You all are)
+* **Ellos/Ellas son** (They are)
 
-*Usage tip*: Use **ser** for identity, profession, origin, and time. Use **estar** for temporary states and locations.`;
-        } else if (lower.includes('idiom') || lower.includes('spani')) {
-          mockReply = `Here are **5 Spanish Idioms** that will make you sound like a native:
+*Tutor Tip*: Use "ser" for identity, origin, and time. Use "estar" for location and feelings!`;
+        } else if (lower.includes('exercise') || lower.includes('practice') || lower.includes('test')) {
+          mockReply = `**Practice Exercise** 📝
 
-1. **"Tomar el pelo"** (Literal: To take the hair) — Meaning: To pull someone's leg / joke around.
-2. **"Echar de menos"** (Literal: To throw of less) — Meaning: To miss someone/something.
-3. **"Ponerse las pilas"** (Literal: To put in the batteries) — Meaning: To wake up, focus, or get to work.
-4. **"Ser pan comido"** (Literal: To be eaten bread) — Meaning: To be a piece of cake / extremely easy.
-5. **"Costar un ojo de la cara"** (Literal: To cost an eye of the face) — Meaning: To cost an arm and a leg.`;
-        } else if (lower.includes('pronounce') || lower.includes('refrigerator') || lower.includes('japan')) {
-          mockReply = `In Japanese, the word for "refrigerator" is **冷蔵庫 (reizōko)**.
+Translate this sentence into ${targetName}:
+*"Where is the train station?"*
 
-* **Hiragana**: れいぞうこ
-* **Romaji**: re-i-zo-o-ko
-* **Pronunciation key**:
-  * **Rei**: Sounds like the English word "ray".
-  * **zō**: Sounds like "zoh", but the "o" vowel is held double length (long vowel).
-  * **ko**: Sounds like the first part of "coat".
+Type your translation here and I will correct your grammar!`;
+        } else if (lower.includes('station') || lower.includes('estación') || lower.includes('gare')) {
+          mockReply = `**Excellent Job!** 🎉 
+Your translation is completely correct. 
+* Spanish: *¿Dónde está la estación de tren?*
+* French: *Où est la gare?*
 
-Try reading it together: *ray-zoh-koh*. Ensure you slightly hold the middle "zō" sound!`;
-        } else if (lower.includes('german') || lower.includes('hund') || lower.includes('correct')) {
-          mockReply = `Great sentence! However, there is a minor grammatical correction. 
-
-Correct sentence: **"Ich habe einen Hund."**
-
-* **Why?**
-  * In German, "haben" (to have) is a transitive verb that requires the **accusative case** for its object.
-  * "Hund" (dog) is a **masculine noun** (*der Hund*).
-  * Therefore, the indefinite article "ein" becomes **einen** in the masculine accusative case.
-  * If the dog was female (like a cat, *die Katze*), it would remain "eine Katze".`;
+I've awarded you **+20 XP** for this correct translation practice. Keep it up!`;
+          // Award XP
+          const addXp = stats.xp + 20;
+          const nextLvl = Math.floor(addXp / 500) + 1;
+          useHistoryStore.getState().setStoreState(translations, { ...stats, xp: addXp, level: nextLvl });
+        } else if (lower.includes('grammar') || lower.includes('structure')) {
+          mockReply = `**Grammar Breakdown** 💡
+In ${targetName}, adjectives usually come *after* the noun.
+For example:
+* English: "The *green* book"
+* ${targetName}: "${targetName === 'Spanish' ? 'El libro *verde*' : 'Le livre *vert*'}"
+This is different from English, so keep it in mind when translating!`;
         } else {
-          mockReply = `That is an excellent language learning question! 
+          mockReply = `Hi! I'm here as your ${targetName} tutor. 
+Since you are studying for **${goalsStr}**, try asking me:
+1. "Give me a practice exercise"
+2. "Explain verb conjugation"
+3. "Give me grammar tips"
 
-To get customized, detailed AI-powered answers, connect your **OpenAI API Key** in the **Settings** menu. 
-
-Currently, I am operating in Offline/Demo mode. Feel free to ask about spanish verbs, idioms, Japanese pronunciation, or German grammar to see more demonstration content!`;
+*(To get full customized AI responses, you can set your OpenAI API key in Settings)*`;
         }
         typeMessage(mockReply, botMsgId);
       }
@@ -239,7 +267,7 @@ Currently, I am operating in Offline/Demo mode. Feel free to ask about spanish v
       setMessages(prev =>
         prev.map(m =>
           m.id === botMsgId
-            ? { ...m, content: `Error: ${err?.message || 'Failed to contact AI. Please check your connection or API key.'}` }
+            ? { ...m, content: `Error: ${err?.message || 'Failed to contact AI. Please check your connection.'}` }
             : m
         )
       );
@@ -248,15 +276,40 @@ Currently, I am operating in Offline/Demo mode. Feel free to ask about spanish v
   };
 
   const handleClear = () => {
-    setMessages([
-      {
-        id: 'welcome',
-        role: 'assistant',
-        content: 'Hello! I am your AI Language Assistant. I can explain complex grammar, correct your sentences, suggest expressions, or help you practice pronunciation. Select a topic below or type your question!',
-        timestamp: Date.now(),
-      },
-    ]);
+    clearTutorHistory();
+    const targetName = targetLang ? targetLang.name : 'Spanish';
+    const welcomeMsg: TutorMessage = {
+      id: 'welcome',
+      role: 'assistant',
+      content: `Hello ${currentUser?.name}! I am your AI Language Tutor. 🎓\n\nI see you are a **${currentUser?.skillLevel}** learning **${targetName}**.\n\nI can explain grammar, suggest better phrasings, help you practice pronunciation, or give you customized practice exercises. Tap a suggestion below or tell me what you want to study today!`,
+      timestamp: Date.now(),
+    };
+    setMessages([welcomeMsg]);
+    addTutorMessage(welcomeMsg);
   };
+
+  const SUGGESTIONS = [
+    { text: `Give me a ${targetLang?.name || 'Spanish'} practice exercise`, icon: '✍️' },
+    { text: `Explain ${targetLang?.name || 'Spanish'} verb conjugations`, icon: '📝' },
+    { text: `How do I structure questions in ${targetLang?.name || 'Spanish'}?`, icon: '❓' },
+  ];
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4">
+        <div className="glass-card p-8 text-center max-w-sm">
+          <BookOpen className="w-12 h-12 text-text-tertiary mx-auto mb-4 opacity-40" />
+          <h3 className="text-lg font-bold text-text-primary mb-2">AI Language Tutor</h3>
+          <p className="text-xs text-text-tertiary mb-6">
+            Sign in to start chatting with your personalized AI language tutor, save conversation logs, and practice custom exercises.
+          </p>
+          <button onClick={() => router.push('/auth/login')} className="btn-primary w-full py-2.5 rounded-xl text-xs font-bold shadow-md">
+            Sign In Now
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pb-24 md:pb-8 flex flex-col justify-between max-w-4xl mx-auto px-4 sm:px-6 py-8">
@@ -269,12 +322,12 @@ Currently, I am operating in Offline/Demo mode. Feel free to ask about spanish v
       {/* Header */}
       <div className="relative flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-white" />
+          <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center shadow-lg">
+            <BookOpen className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-text-primary">AI Language Assistant</h1>
-            <p className="text-sm text-text-tertiary">Grammar explanations, corrections, and cultural queries</p>
+            <h1 className="text-xl font-bold text-text-primary">AI Language Tutor</h1>
+            <p className="text-xs text-text-tertiary">Conversational grammar coach & exercise builder</p>
           </div>
         </div>
         <button
@@ -292,7 +345,7 @@ Currently, I am operating in Offline/Demo mode. Feel free to ask about spanish v
           <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <div>
             <span className="font-semibold block mb-0.5">Demo Mode Active</span>
-            To get real-time custom explanations for any prompt, paste your OpenAI API key in the <span className="underline font-semibold cursor-pointer" onClick={() => window.location.href = '/settings'}>Settings page</span>. Try the suggestions below for a demonstration!
+            To get real-time custom grammar analysis, paste your OpenAI API key in the <span className="underline font-semibold cursor-pointer" onClick={() => router.push('/settings')}>Settings page</span>. Try the suggestions below to practice!
           </div>
         </div>
       )}
@@ -325,7 +378,7 @@ Currently, I am operating in Offline/Demo mode. Feel free to ask about spanish v
                   )}
                 </div>
 
-                {m.content && (
+                {m.content && !isUser && (
                   <div className="absolute right-2 bottom-[-24px] opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-1.5 bg-bg-primary/95 px-2 py-0.5 rounded-md border border-border text-[10px] text-text-tertiary shadow-sm z-10">
                     <button
                       onClick={() => handleSpeak(m.content)}
@@ -351,20 +404,20 @@ Currently, I am operating in Offline/Demo mode. Feel free to ask about spanish v
       </div>
 
       {/* Suggestion Chips */}
-      {messages.length === 1 && (
+      {messages.length <= 2 && (
         <div className="relative mb-6">
-          <p className="text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-2.5 px-1">Suggested Questions</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <p className="text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-2.5 px-1">Tutor Topics</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             {SUGGESTIONS.map((s, idx) => (
               <motion.button
                 key={idx}
                 whileHover={{ scale: 1.01, y: -1 }}
                 whileTap={{ scale: 0.99 }}
                 onClick={() => handleSend(s.text)}
-                className="flex items-center gap-2.5 text-left p-3.5 rounded-xl glass border border-border hover:border-primary/40 transition-colors"
+                className="flex items-center gap-2.5 text-left p-3 rounded-xl glass border border-border hover:border-primary/40 transition-colors"
               >
                 <span className="text-lg">{s.icon}</span>
-                <span className="text-xs font-medium text-text-secondary line-clamp-1">{s.text}</span>
+                <span className="text-xs font-medium text-text-secondary line-clamp-2 leading-snug">{s.text}</span>
               </motion.button>
             ))}
           </div>
@@ -380,7 +433,7 @@ Currently, I am operating in Offline/Demo mode. Feel free to ask about spanish v
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isListening ? 'Listening...' : 'Ask about grammar, idioms, corrections...'}
+            placeholder={isListening ? 'Listening...' : `Ask your ${targetLang?.name || 'Spanish'} tutor anything...`}
             disabled={isSending}
             className="w-full pl-4 pr-12 py-3.5 rounded-xl glass border border-border text-text-primary text-sm focus:border-primary/50 focus:outline-none transition-colors"
           />

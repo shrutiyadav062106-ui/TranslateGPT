@@ -26,11 +26,17 @@ TranslateGPT is a premium, mobile-first translation and language-learning applic
 * 🎙️ **Voice Translation**: Real-time microphone capture utilizing the browser's native **Web Speech API** paired with a responsive sound wave animation. Includes proactive permission check prompts, missing hardware indicators, and a clean keyboard input fallback.
 * 👥 **Conversation Mode**: A split-screen interface designed for two-person, bilingual chats. Features auto-played text-to-speech (TTS) translations, individual speaker panels, and keyboard inputs for noise-restricted zones.
 * 📷 **Camera / OCR Translation**: Drag-and-drop or upload images containing text. The local **Tesseract.js** engine extracts the text client-side for immediate translation, avoiding backend payload transfers.
+* 🔒 **Secure Authentication & Onboarding**: Complete client-side profile registry supporting Email/Password sign-up, secure login, password reset, and simulated Google/Apple OAuth overlays. Includes personalized onboarding to capture native language, learning goals (Travel, Business, School, Fluency, Casual), and target languages.
+* 📊 **Personalized Activity Dashboard**: Logged-in users receive a tailored hub showing daily XP goal rings, consecutive learning streaks, a weekly activity bar chart, favorite expressions list, and current learning statistics.
+* 📁 **Saved Library & Folder Management**: Create custom folders (e.g. "Travel Spanish") and assign saved translations, voice logs, or conversation snapshots using handy interactive dropdowns. Support for language filtering and real-time query filtering.
+* 🗺️ **Dynamic Learning Path**: Custom learning paths with units, interactive lessons, review milestones, and goal-specific AI booster modules (e.g. "Fluency Boosters", "Travel Phrasebooks").
+* 🧠 **AI Tutor with Memory**: Dedicated AI Tutor page that saves chat logs to the user's isolated profile memory, tailoring grammar exercises, sentence builders, and feedback to the user's specific targets and goals.
+* 🔍 **Global Intelligent Search**: Locate information instantly with a global search query engine mapping across saved translation history, custom folders, vocabulary lists, and AI Tutor logs.
 * 🎓 **Gamified Study Center**:
   * **Interactive Quiz**: Dynamically checks vocabulary with a 5-question multi-choice exam, awarding **+50 XP** on a successful score.
   * **3D Flippable Flashcards**: Automatically populated from your favorited translation logs. Flip them with fluid Framer Motion animations and mark them as "Mastered" or "Needs Practice".
   * **Streak & Level Systems**: Tracks consecutive study days and increments user level (Level = `floor(XP / 500) + 1`).
-* 🤖 **AI Language Assistant**: Interactive AI assistant for grammar explanations, Spanish idioms, pronunciation guides, and German case structures. Supported by dynamic typewriter animations and suggestions.
+* 🤖 **AI Language Assistant**: Interactive AI assistant for grammar explanations, pronunciation guides, and German case structures. Supported by dynamic typewriter animations and suggestions.
 * ⚙️ **Robust Settings**: Configure your personal OpenAI API Key, toggle text-to-speech voice speed (0.75x to 1.5x), unlock system badges, download logs as JSON, or clear history storage in a single tap.
 
 ---
