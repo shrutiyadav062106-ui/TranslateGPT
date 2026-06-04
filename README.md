@@ -1,5 +1,7 @@
 # 🌍 TranslateGPT — AI-Powered Multilingual Translator
 
+🚀 **Live Production Deployment**: [translategpt-delta.vercel.app](https://translategpt-delta.vercel.app/)
+
 TranslateGPT is a premium, mobile-first translation and language-learning application. Designed with modern **Glassmorphic SaaS aesthetics**, the platform offers instant translations across text, voice, camera, and live conversations. It also includes a fully gamified learning dashboard featuring daily translation progress trackers, 3D flippable flashcards, streak mechanics, XP levels, and an interactive AI Language Assistant.
 
 ---
@@ -97,7 +99,7 @@ NEXT_PUBLIC_DEFAULT_OPENAI_KEY=your-openai-api-key-here
 ```bash
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) in your web browser.
+Open [http://localhost:3000](http://localhost:3000) in your web browser (or access the live production deployment at [translategpt-delta.vercel.app](https://translategpt-delta.vercel.app/)).
 
 ### 5. Build for Production
 To compile and check for type safety:
